@@ -5,8 +5,6 @@ import (
 	"image"
 	"image/color"
 	"math/bits"
-	"sort"
-
 	//	"sort"
 	"strings"
 	"sync"
@@ -76,13 +74,6 @@ func (m *MatrixBitSet) LastCol() uint {
 	return m.C - 1
 }
 
-// points are [r, c]
-func (m *MatrixBitSet) FillBox(ul, ur, lr, ll []uint) {
-	r, c := ul[0], ul[1]
-	dr, dc := ll[0]-r, ur[1]-c
-	m.Fill(r, c, dr, dc)
-}
-
 func (m *MatrixBitSet) Fill(r, c, dr, dc uint) *MatrixBitSet {
 	m.panicPastMatrix(r, c)
 	m.panicPastMatrix(r+dr, c+dc)
@@ -105,21 +96,6 @@ func (m *MatrixBitSet) Drain(r, c, dr, dc uint) *MatrixBitSet {
 	return m
 }
 
-func popcntSlice(s []uint64) uint64 {
-	var cnt int
-	for _, x := range s {
-		cnt += bits.OnesCount64(x)
-	}
-	return uint64(cnt)
-}
-
-func (b *MatrixBitSet) Count() uint {
-	if b != nil && b.B != nil {
-		return uint(popcntSlice(b.B))
-	}
-	return 0
-}
-
 func (m *MatrixBitSet) NewPos(i uint) MatrixPos {
 	stride := m.C
 	return MatrixPos{r: i / stride, c: i % stride, stride: stride}
@@ -131,35 +107,20 @@ func (m *MatrixBitSet) NewPos(i uint) MatrixPos {
 // returns a new M2
 func (m *MatrixBitSet) ShrinkToBounds() (*MatrixBitSet, func(r, c uint) (uint, uint), error) {
 	if bounds, ok := m.BoundsOfSets(); ok {
-		return m.Shrink(bounds)
-	}
-	return nil, nil, fmt.Errorf("no set bits are on")
-}
+		w, h := bounds.Width()+1, bounds.Height()+1
 
-// Creates the minimal *M2 that are contained by the passed bounds
-func (m *MatrixBitSet) Shrink(bounds *MatrixBounds) (*MatrixBitSet, func(r, c uint) (uint, uint), error) {
-	w, h := bounds.Width()+1, bounds.Height()+1
-
-	shrunk := NewMatrixBitSet(w, h)
-	for i, e := m.nextSet(0); e; i, e = m.nextSet(i + 1) {
-		r, c := i/m.C, i%m.C
-		if bounds.NInside(i) {
+		shrunk := NewMatrixBitSet(w, h)
+		for i, e := m.nextSet(0); e; i, e = m.nextSet(i + 1) {
+			r, c := i/m.C, i%m.C
 			shrunk.SetN(shrunk.index(r-bounds.MinR, c-bounds.MinC))
 		}
-	}
-	// transducer to get original coords of matrix shrunken from
-	transducer := func(r, c uint) (uint, uint) {
-		return r + bounds.MinR, c + bounds.MinC
-	}
-	return shrunk, transducer, nil
-}
-
-func (m *MatrixBitSet) EraseBounds(bounds *MatrixBounds) {
-	for i, e := m.nextSet(0); e; i, e = m.nextSet(i + 1) {
-		if bounds.NInside(i) {
-			m.ClearN(i)
+		// transducer to get original coords of matrix shrunken from
+		transducer := func(r, c uint) (uint, uint) {
+			return r + bounds.MinR, c + bounds.MinC
 		}
+		return shrunk, transducer, nil
 	}
+	return nil, nil, fmt.Errorf("No set bits are on")
 }
 
 // Is the passed index within the bounds (left, top, right, bottom)?
@@ -281,60 +242,12 @@ func (m *MatrixBitSet) ExtractBorders() ([]MatrixPos, bool) {
 			borders = append(borders, m.NewPos(i))
 		}
 	}
-	return borders, len(borders) != 0
-}
-
-type VertexSpace struct {
-	mb   *MatrixBitSet
-	cols uint
-	rows uint
-}
-
-func (vs *VertexSpace) PosFor(i uint) []VertexPos {
-	stride := vs.mb.C
-	r, c := i/stride, i%stride
-	points := make([]VertexPos, 0, 4)
-	points = append(points, VertexPos{vs, r, c, i})
-	points = append(points, VertexPos{vs, r, c + 1, i})
-	points = append(points, VertexPos{vs, r + 1, c + 1, i})
-	points = append(points, VertexPos{vs, r + 1, c, i})
-	return points
-}
-
-type VertexPos struct {
-	v    *VertexSpace
-	r, c uint
-	i    uint
-}
-
-func (vp *VertexPos) ToMatrixPos() MatrixPos {
-	stride := vp.v.mb.C
-	return MatrixPos{vp.i / stride, vp.i % stride, stride}
-}
-
-func (m *MatrixBitSet) ToVertexSpace() (*VertexSpace, []VertexPos) {
-	borders := make([]VertexPos, 0, 512)
-	vs := &VertexSpace{mb: m, cols: (m.C * 2) - 1, rows: (m.R * 2) - 1}
-
-	for i, e := m.nextSet(0); e; i, e = m.NextSet(i + 1) {
-		if !m.internalN(i) {
-			borders = append(borders, vs.PosFor(i)...)
-		}
-	}
-	return vs, borders
+	return borders, true
 }
 
 type PosSet struct {
 	mutex sync.RWMutex
 	pos   map[string]MatrixPos
-}
-
-func NewPosSet(points []MatrixPos) *PosSet {
-	set := &PosSet{pos: make(map[string]MatrixPos)}
-	for _, pt := range points {
-		set.pos[pt.String()] = pt
-	}
-	return set
 }
 
 func (ps *PosSet) Add(mp MatrixPos) bool {
@@ -349,17 +262,6 @@ func (ps *PosSet) Add(mp MatrixPos) bool {
 	return false
 }
 
-func (ps *PosSet) Remove(mp MatrixPos) bool {
-	s := mp.String()
-	ps.mutex.Lock()
-	_, found := ps.pos[s]
-	if found {
-		delete(ps.pos, s)
-	}
-	ps.mutex.Unlock()
-	return found
-}
-
 func (ps *PosSet) Contains(mp MatrixPos) bool {
 	s := mp.String()
 	ps.mutex.RLock()
@@ -368,246 +270,91 @@ func (ps *PosSet) Contains(mp MatrixPos) bool {
 	return found
 }
 
-func (ps *PosSet) IsEmpty() bool {
-	ps.mutex.RLock()
-	count := len(ps.pos)
-	ps.mutex.RUnlock()
-	return count == 0
-}
+// Border points that are themselves vertexes,
+// (ie. not a part of horizontal or vertical spans)
+//func (m *MatrixBitSet) ExtractVertexes(expected *PosSet) ([]MatrixPos, bool) {
+//	// First whittle down to just border pos
+//	if borders, ok := m.ExtractBorders(); ok {
+//		firstPos := InvalidPos
+//		prevPos := InvalidPos
+//		lastPos := InvalidPos
 
-func (ps *PosSet) Points() []MatrixPos {
-	ps.mutex.RLock()
-	points := make([]MatrixPos, 0, len(ps.pos))
-	for _, v := range ps.pos {
-		points = append(points, v)
-	}
-	ps.mutex.RUnlock()
-	return points
-}
+//		posSet := &PosSet{pos: make(map[string]MatrixPos)}
 
-type LinearRing []MatrixPos
+//		output := func() {
+//			if lastPos.Valid() {
+//				posSet.Add(firstPos)
+//				posSet.Add(lastPos)
+//				if !expected.Contains(firstPos) {
+//					fmt.Println("Connecting", firstPos, lastPos)
+//				}
+//				lastPos = InvalidPos
+//				firstPos = InvalidPos
+//			} else if firstPos.Valid() {
+//				//				posSet.Add(firstPos)
+//				firstPos = InvalidPos
+//			}
+//		}
 
-type Polygon struct {
-	Outer LinearRing
-	Holes []LinearRing
-}
+//		// Now sort them by rows to find horizontal runs and eliminate
+//		sort.Sort(ByRows(borders))
+//		currentRow := -1
+//		for _, mp := range borders {
+//			if mp.Row_i() != currentRow {
+//				output()
+//				currentRow = mp.Row_i()
+//				firstPos = mp
+//				prevPos = mp
+//			} else if mp.Col_i() == prevPos.Col_i()+1 {
+//				// next col over, just keep span going
+//				lastPos = mp
+//				prevPos = mp
+//			} else {
+//				// row matches, but not next col
+//				// output and reset
+//				output()
+//				currentRow = -1
+//			}
+//		}
+//		output()
 
-// Assuming this matrix contains filled in areas, this function
-// will grab their boundaries including holes. It will also grab
-// polygons within a hole of an outer polygon and will nest any levels deep.
-func (m *MatrixBitSet) ExtractAllPolygons() ([]*Polygon, bool) {
-	borders, ok := m.ExtractBorders()
-	if !ok {
-		// No set bits
-		return []*Polygon{}, true
-	}
-	m2 := NewMatrixBitSet(m.C, m.R)
-	sort.Sort(ByRows(borders))
-	for _, mp := range borders {
-		m2.Set(mp.Both())
-	}
-	borderSet := NewPosSet(borders)
-	polygons := make([]*Polygon, 0, 128)
+//		fmt.Println("Sorting by cols")
 
-	for {
-		if polygon, erase, ok := m2.ExtractPolygon(borders[0]); ok {
-			// a nil polygon means it was shorter than 5 points
-			// a triangle will have many points stair stepping diagonally
-			// a rect will have at least 4 + the origin == 5
-			if polygon != nil {
-				polygons = append(polygons, polygon)
-			}
-			for _, eraser := range erase {
-				borderSet.Remove(eraser)
-				m2.ClearN(eraser.N())
-			}
-		} else {
-			return nil, false
-		}
-		if !borderSet.IsEmpty() {
-			borders = borderSet.Points()
-			sort.Sort(ByRows(borders))
-		} else {
-			break
-		}
-	}
-	return polygons, true
-}
+//		// Now sort them by cols to find vertical runs and eliminate
+//		sort.Sort(ByCols(borders))
+//		currentCol := -1
+//		for _, mp := range borders {
+//			if mp.Col_i() != currentCol {
+//				output()
+//				currentCol = mp.Col_i()
+//				firstPos = mp
+//				prevPos = mp
+//			} else if mp.Row_i() == prevPos.Row_i()+1 {
+//				// next row down, just keep span going
+//				lastPos = mp
+//				prevPos = mp
+//			} else {
+//				// col matches, but not next row
+//				// output and reset
+//				output()
+//				currentCol = -1
+//			}
+//		}
+//		output()
 
-// This expects the matrix to just be borders
-func (m *MatrixBitSet) ExtractPolygon(start MatrixPos) (*Polygon, []MatrixPos, bool) {
-	hits := make([]MatrixPos, 0, 2048)
-
-	eraseFn := func(pt MatrixPos) {
-		hits = append(hits, pt)
-	}
-
-	ring := m.TraceShell(start, false, eraseFn)
-	if len(ring) < 5 {
-		return nil, hits, true
-	}
-	bounds := NewMatrixBounds(m, ring)
-	m3, transducer, e := m.Shrink(bounds)
-	if e != nil {
-		fmt.Println("unable to shrink to shell", e)
-		return nil, nil, false
-	}
-	holes := make([]LinearRing, 0, 128)
-	for {
-		holeEraseFn := func(pt MatrixPos) {
-			r, c := transducer(pt.r, pt.c)
-			hits = append(hits, NewMatrixPos(r, c, m.C))
-		}
-		if start, ok := m3.NextSet(0); ok {
-			startPt := m3.NewPos(start)
-			shrunkHole := m3.TraceShell(startPt, true, holeEraseFn)
-			// remove any polygons within a polygon hole, this will be picked up as a new polygon
-			holeBounds := NewMatrixBounds(m3, shrunkHole)
-			m3.EraseBounds(holeBounds)
-
-			// convert to parent matrix
-			hole := make([]MatrixPos, 0, len(shrunkHole))
-			for _, sh := range shrunkHole {
-				newR, newC := transducer(sh.r, sh.c)
-				hole = append(hole, NewMatrixPos(newR, newC, m.C))
-			}
-			holes = append(holes, hole)
-		} else {
-			// no more Sets
-			break
-		}
-	}
-	return &Polygon{Outer: ring, Holes: holes}, hits, true
-}
-
-const (
-	NoDecision = 0
-	MoveRight  = 1 << iota
-	MoveDown
-	MoveUp
-	MoveLeft
-)
-
-func (m MatrixBitSet) TraceShell(start MatrixPos, clockwise bool, eraseFn func(MatrixPos)) LinearRing {
-	vertexes := make([]MatrixPos, 0, 128)
-
-	// start upper left position
-	// we move in a counter clockwise direction, down, right, up, left
-	// if clockwise, right, up, down, left
-	origin := start
-	vertexes = append(vertexes, start)
-	state := NoDecision
-
-	var testDown = func() bool {
-		down := start.Down(m.R)
-		if down.Valid() && m.TestN(down.N()) {
-			// has Down
-			if state & ^MoveDown != 0 {
-				vertexes = append(vertexes, start)
-			}
-			state = MoveDown
-			start = down
-			return true
-		}
-		return false
-	}
-	var testUp = func() bool {
-		up := start.Up()
-		if up.Valid() && m.TestN(up.N()) {
-			// has up
-			if state & ^MoveUp != 0 {
-				vertexes = append(vertexes, start)
-			}
-			state = MoveUp
-			start = up
-			return true
-		}
-		return false
-	}
-
-	var testRight = func() bool {
-		right := start.Right(m.C)
-		if right.Valid() && m.TestN(right.N()) {
-			if state & ^MoveRight != 0 {
-				vertexes = append(vertexes, start)
-			}
-			state = MoveRight
-			start = right
-			return true
-		}
-		return false
-	}
-
-	var testLeft = func() bool {
-		left := start.Left()
-		if left.Valid() && m.TestN(left.N()) {
-			if state & ^MoveLeft != 0 {
-				vertexes = append(vertexes, start)
-			}
-			state = MoveLeft
-			start = left
-			return true
-		}
-		return false
-	}
-
-	// state machine
-	for {
-		// prevent this position from being found again
-		m.ClearN(start.N())
-		if eraseFn != nil {
-			eraseFn(start)
-		}
-
-		if clockwise {
-			if !testRight() {
-				if !testDown() {
-					if !testUp() {
-						if !testLeft() {
-							// no more movement is possible, we are back to origin, output and finish
-							vertexes = append(vertexes, origin)
-							break
-						}
-					}
-				}
-			}
-		} else {
-			// counter clockwise
-			if !testDown() {
-				if !testLeft() {
-					if !testRight() {
-						if !testUp() {
-							// no more movement is possible, we are back to origin, output and finish
-							vertexes = append(vertexes, origin)
-							break
-						}
-					}
-				}
-			}
-		}
-	}
-	return vertexes
-}
+//		retval := make([]MatrixPos, 0, len(posSet.pos))
+//		for _, v := range posSet.pos {
+//			retval = append(retval, v)
+//		}
+//		return retval, true
+//	}
+//	return []MatrixPos{}, false
+//}
 
 func (m *MatrixBitSet) AsImage(clr color.NRGBA) *image.NRGBA {
-	img := image.NewNRGBA(image.Rect(0, 0, int(m.C), int(m.R)))
+	img := image.NewNRGBA(image.Rect(0, 0, int(m.R), int(m.C)))
 
-	for i, found := m.nextSet(0); found; i, found = m.nextSet(i + 1) {
-		pos := m.NewPos(i)
-		img.Set(pos.Col_i(), pos.Row_i(), clr)
-	}
-	return img
-}
-
-func (m *MatrixBitSet) AsImageWithBackground(clr, background color.NRGBA) *image.NRGBA {
-	img := image.NewNRGBA(image.Rect(0, 0, int(m.C), int(m.R)))
-
-	for row := uint(0); row < m.R; row++ {
-		for col := uint(0); col < m.C; col++ {
-			img.Set(int(col), int(row), background)
-		}
-	}
-	for i, found := m.nextSet(0); found; i, found = m.nextSet(i + 1) {
+	for i, e := m.nextSet(0); e; i, e = m.nextSet(i + 1) {
 		pos := m.NewPos(i)
 		img.Set(pos.Col_i(), pos.Row_i(), clr)
 	}
@@ -756,8 +503,7 @@ func (m *MatrixBitSet) FormatWord(w uint64) string {
 
 	for i := 63; i >= 0; i-- {
 		v := (w >> uint(i)) & 0x01
-		if _, e := fmt.Fprintf(&b, "%d", v); e != nil {
-		}
+		fmt.Fprintf(&b, "%d", v)
 	}
 	return b.String()
 }
