@@ -1,11 +1,11 @@
 package matrixbitset
 
 import (
-	//	"fmt"
-	//	"image/color"
-	//	"image/png"
-	//	"os"
-	//	"sort"
+	"fmt"
+	"image/color"
+	"image/png"
+	"os"
+	"sort"
 	"testing"
 )
 
@@ -129,59 +129,126 @@ func TestBorders(t *testing.T) {
 			t.Errorf("Expected 2196 borders, received %d", len(borders))
 		}
 	}
+	blue := color.NRGBA{R: uint8(0), G: uint8(0), B: uint8(255), A: uint8(255)}
+	red := color.NRGBA{R: uint8(255), G: uint8(0), B: uint8(0), A: uint8(255)}
+	img := m.AsImage(blue)
+	for _, mp := range borders {
+		img.Set(mp.Col_i(), mp.Row_i(), red)
+	}
+	if f, err := os.Create("borders.png"); err == nil {
+		if e := png.Encode(f, img); e != nil {
+			t.Error(e)
+		}
+		if e := f.Close(); e != nil {
+			t.Error(e)
+		}
+	} else {
+		t.Error(err)
+	}
 }
 
-//func TestVertexes(t *testing.T) {
-//	m := NewMatrixBitSet(6001, 6001)
-//	m.Fill(100, 100, 500, 500)
-//	m.Fill(150, 50, 50, 50)  //kickout left from row 150 to 199 (inclusive)
-//	m.Fill(200, 600, 50, 50) //kickout right from row 200 to 299 (inclusive)
-//	expected := &PosSet{pos: make(map[string]MatrixPos)}
-//	expected.Add(NewMatrixPos(100, 100, m.C))
-//	expected.Add(NewMatrixPos(100, 599, m.C))
-//	expected.Add(NewMatrixPos(200, 599, m.C))
-//	expected.Add(NewMatrixPos(150, 50, m.C))
-//	expected.Add(NewMatrixPos(150, 100, m.C))
-//	vertexes, ok := m.ExtractVertexes(expected)
-//	if !ok {
-//		t.Error("ExtractVertexes failed")
-//	} else {
-//		if len(vertexes) != 12 {
-//			t.Errorf("Expected 12 vertexes, received %d", len(vertexes))
-//			sort.Sort(ByRows(vertexes))
-//			currentRow := -1
-//			prevPos := InvalidPos
-//			for _, mp := range vertexes {
-//				if mp.Row_i() != currentRow {
-//					currentRow = mp.Row_i()
-//					prevPos = mp
-//				} else if mp.Row_i() == prevPos.Row_i()+1 {
-//					fmt.Println("Found row run from", prevPos.String(), "to", mp.String())
-//					prevPos = mp
-//				}
-//			}
-//			sort.Sort(ByCols(vertexes))
-//			currentCol := -1
-//			prevPos = InvalidPos
-//			for _, mp := range vertexes {
-//				if mp.Col_i() != currentCol {
-//					currentCol = mp.Col_i()
-//					prevPos = mp
-//				} else if mp.Col_i() == prevPos.Col_i()+1 {
-//					fmt.Println("Found col run from", prevPos.String(), "to", mp.String())
-//					prevPos = mp
-//				}
-//			}
-//			blue := color.NRGBA{R: uint8(0), G: uint8(0), B: uint8(255), A: uint8(255)}
-//			red := color.NRGBA{R: uint8(255), G: uint8(0), B: uint8(0), A: uint8(255)}
-//			img := m.AsImage(blue)
-//			for _, mp := range vertexes {
-//				img.Set(mp.Col_i(), mp.Row_i(), red)
-//			}
-//			if f, err := os.Create("vertexes.png"); err == nil {
-//				png.Encode(f, img)
-//				f.Close()
-//			}
-//		}
-//	}
-//}
+func TestBoxes(t *testing.T) {
+	m := NewMatrixBitSet(650, 650)
+	m.Fill(0, 0, 64, 64)
+	m.Fill(0, 64, 64, 64)
+	m.Fill(0, 128, 64, 64)
+	m.Fill(0, 512, 64, 64)
+	m.Fill(0, 576, 64, 64)
+	m.Fill(64, 0, 64, 64)
+	m.Fill(64, 64, 64, 64)
+	m.Fill(64, 128, 64, 64)
+	m.Fill(64, 192, 64, 64)
+	m.Fill(64, 512, 64, 64)
+	m.Fill(64, 576, 64, 64)
+	m.Fill(128, 0, 64, 64)
+	m.Fill(128, 64, 64, 64)
+	m.Fill(128, 128, 64, 64)
+	m.Fill(128, 192, 64, 64)
+	m.Fill(192, 320, 64, 64)
+	m.Fill(192, 384, 64, 64)
+	m.Fill(256, 576, 64, 64)
+	m.Fill(320, 512, 64, 64)
+	m.Fill(320, 576, 64, 64)
+	m.Fill(384, 448, 64, 64)
+	m.Fill(384, 512, 64, 64)
+	m.Fill(384, 576, 64, 64)
+	m.Fill(448, 384, 64, 64)
+	m.Fill(448, 448, 64, 64)
+	m.Fill(448, 512, 64, 64)
+	m.Fill(512, 320, 64, 64)
+	m.Fill(512, 384, 64, 64)
+	m.Fill(512, 448, 64, 64)
+	m.Fill(576, 320, 64, 64)
+	m.Fill(576, 384, 64, 64)
+	m.Fill(576, 448, 64, 64)
+	if _, ok := m.JarvisHullOfSets(); ok {
+
+
+	} else {
+		t.Error("JarvisHull failed")
+	}
+}
+
+func TestExtractPolygon(t *testing.T) {
+	m := NewMatrixBitSet(6001, 6001)
+	m.Fill(100, 100, 500, 500)
+	m.Drain(150, 150, 25, 25) // add a hole
+	m.Fill(150, 50, 50, 50)  //kickout left from row 150 to 199 (inclusive)
+	m.Fill(200, 600, 50, 50) //kickout right from row 200 to 299 (inclusive)
+	polygons, ok := m.ExtractAllPolygons()
+	if !ok {
+		t.Error("ExtractAllPolygons failed")
+	} else {
+		if len(polygons) != 1 {
+			t.Errorf("Expected 1 polygon, received %d", len(polygons))
+		} else {
+			if len(polygons[0].Outer) != 13 {
+				t.Errorf("Expected 13 vertexes, received %d", len(polygons[0].Outer))
+				sort.Sort(ByRows(polygons[0].Outer))
+				currentRow := -1
+				prevPos := InvalidPos
+				for _, mp := range polygons[0].Outer {
+					if mp.Row_i() != currentRow {
+						currentRow = mp.Row_i()
+						prevPos = mp
+					} else if mp.Row_i() == prevPos.Row_i()+1 {
+						fmt.Println("Found row run from", prevPos.String(), "to", mp.String())
+						prevPos = mp
+					}
+				}
+				sort.Sort(ByCols(polygons[0].Outer))
+				currentCol := -1
+				prevPos = InvalidPos
+				for _, mp := range polygons[0].Outer {
+					if mp.Col_i() != currentCol {
+						currentCol = mp.Col_i()
+						prevPos = mp
+					} else if mp.Col_i() == prevPos.Col_i()+1 {
+						fmt.Println("Found col run from", prevPos.String(), "to", mp.String())
+						prevPos = mp
+					}
+				}
+				blue := color.NRGBA{R: uint8(0), G: uint8(0), B: uint8(255), A: uint8(255)}
+				red := color.NRGBA{R: uint8(255), G: uint8(0), B: uint8(0), A: uint8(255)}
+				img := m.AsImage(blue)
+				for _, mp := range polygons[0].Outer {
+					img.Set(mp.Col_i(), mp.Row_i(), red)
+				}
+				if f, err := os.Create("vertexes.png"); err == nil {
+					if e := png.Encode(f, img); e != nil {
+						t.Error(e)
+					}
+					if e := f.Close(); e != nil {
+						t.Error(e)
+					}
+				} else {
+					t.Error(err)
+				}
+			} else if polygons[0].Outer[0] != polygons[0].Outer[12] {
+				t.Errorf("Expected first position %v to be equal to last %v", polygons[0].Outer[0], polygons[0].Outer[12])
+			} else if len(polygons[0].Holes) != 1 {
+				t.Errorf("Expected 1 hole, received %d", len(polygons[0].Holes))
+			}
+		}
+	}
+}
