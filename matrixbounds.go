@@ -9,6 +9,37 @@ type MatrixBounds struct {
 	M                        *MatrixBitSet
 }
 
+func NewMatrixBounds(m *MatrixBitSet, points LinearRing) *MatrixBounds {
+	bounds := &MatrixBounds{M: m, MinR: 1000000, MinC: 1000000}
+	bounds.vertx = make([]uint, 0, len(points)-1)
+	bounds.verty = make([]uint, 0, len(points)-1)
+	for i, mp := range points {
+		if mp.c > bounds.MaxC {
+			bounds.MaxC = mp.c
+			bounds.right = mp.c
+		}
+		if mp.r > bounds.MaxR {
+			bounds.MaxR = mp.r
+			bounds.bottom = mp.r
+		}
+		if mp.c < bounds.MinC {
+			bounds.MinC = mp.c
+			bounds.left = mp.c
+		}
+		if mp.r < bounds.MinR {
+			bounds.MinR = mp.r
+			bounds.top = mp.r
+		}
+		// Exclude the duplicate start point
+		if i < len(points)-1 {
+			bounds.vertx = append(bounds.vertx, mp.c)
+			bounds.verty = append(bounds.verty, mp.r)
+		}
+	}
+
+	return bounds
+}
+
 func (mb *MatrixBounds) Width() uint {
 	return mb.MaxC - mb.MinC
 }
@@ -64,6 +95,10 @@ func (mb *MatrixBounds) setup() *MatrixBounds {
 	mb.verty = []uint{mb.left / stride, mb.top / stride, mb.right / stride, mb.bottom / stride}
 	mb.vertx = []uint{mb.left % stride, mb.top % stride, mb.right % stride, mb.bottom % stride}
 	return mb
+}
+
+func (mb *MatrixBounds) Contains(mp MatrixPos) bool {
+	return mp.c >= mb.MinC && mp.c <= mb.MaxC && mp.r >= mb.MinR && mp.r <= mb.MaxR
 }
 
 func (mb *MatrixBounds) panicIfOutside() {
